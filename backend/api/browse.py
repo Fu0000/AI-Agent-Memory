@@ -58,19 +58,31 @@ async def get_node(
     client = get_db_client()
     
     if not path:
-        # Virtual Root Node
-        memory = {
-            "content": "",
-            "priority": 0,
-            "disclosure": None,
-            "created_at": None,
-            "node_uuid": ROOT_NODE_UUID,
-        }
+        # Check if there is an actual memory stored at the root path
+        memory = await client.get_memory_by_path("", domain=domain)
+        
         children_raw = await client.get_children(
             ROOT_NODE_UUID,
             context_domain=domain,
             context_path=path,
         )
+        
+        if memory:
+            # Hide the actual root node from the root directory listing.
+            children_raw = [
+                c for c in children_raw
+                if c.get("node_uuid") != memory["node_uuid"]
+            ]
+        else:
+            # Virtual Root Node
+            memory = {
+                "content": "",
+                "priority": 0,
+                "disclosure": None,
+                "created_at": None,
+                "node_uuid": ROOT_NODE_UUID,
+            }
+            
         breadcrumbs = [{"path": "", "label": "root"}]
     else:
         # Get the node itself
@@ -101,7 +113,8 @@ async def get_node(
             "name": c["path"].split("/")[-1],  # Last segment
             "priority": c["priority"],
             "disclosure": c.get("disclosure"),
-            "content_snippet": c["content_snippet"]
+            "content_snippet": c["content_snippet"],
+            "approx_children_count": c.get("approx_children_count", 0)
         }
         for c in children_raw
         if c["domain"] == domain
@@ -110,7 +123,7 @@ async def get_node(
     
     # Get all aliases (other paths pointing to the same node)
     aliases = []
-    if path and memory.get("node_uuid"):
+    if memory.get("node_uuid") and memory["node_uuid"] != ROOT_NODE_UUID:
         async with client.session() as session:
             result = await session.execute(
                 select(PathModel.domain, PathModel.path)
@@ -134,6 +147,7 @@ async def get_node(
             "priority": memory["priority"],
             "disclosure": memory["disclosure"],
             "created_at": memory["created_at"],
+            "is_virtual": memory.get("node_uuid") == ROOT_NODE_UUID,
             "aliases": aliases
         },
         "children": children,

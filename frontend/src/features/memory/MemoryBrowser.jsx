@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { 
   ChevronRight, 
@@ -50,26 +50,218 @@ const PriorityBadge = ({ priority, size = 'sm' }) => {
 
 // --- Components ---
 
-// 1. Sidebar Item
-const SidebarItem = ({ icon: Icon, label, active, onClick, count }) => (
-  <button 
-    onClick={onClick}
-    className={clsx(
-      "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 group",
-      active 
-        ? "bg-indigo-500/10 text-indigo-300 shadow-[0_0_10px_rgba(99,102,241,0.1)]" 
-        : "text-slate-500 hover:bg-white/[0.03] hover:text-slate-300"
-    )}
-  >
-    <Icon size={16} className={clsx("transition-colors", active ? "text-indigo-400" : "text-slate-600 group-hover:text-slate-400")} />
-    <span className="flex-1 text-left truncate font-medium">{label}</span>
-    {count !== undefined && (
-      <span className="text-xs bg-slate-800/50 px-1.5 py-0.5 rounded text-slate-600 group-hover:text-slate-500">{count}</span>
-    )}
-  </button>
-);
+// 1. Sidebar Tree Node
+const TreeNode = ({ domain, path, name, childrenCount, activeDomain, activePath, onNavigate, level }) => {
+  const isAncestor = activeDomain === domain && activePath.startsWith(path + '/');
+  const isActive = activeDomain === domain && activePath === path;
+  
+  const [expanded, setExpanded] = useState(isAncestor || isActive);
+  const [children, setChildren] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [fetched, setFetched] = useState(false);
 
-// 2. Breadcrumb
+  const prevActivePath = useRef(activePath);
+  const prevActiveDomain = useRef(activeDomain);
+
+  // Before first fetch, trust server count; after fetch, trust actual children length.
+  const hasChildren = fetched ? children.length > 0 : (childrenCount === undefined || childrenCount > 0);
+
+  useEffect(() => {
+    if (expanded && !fetched && hasChildren) {
+      fetchChildren();
+    }
+  }, [expanded, fetched, hasChildren]);
+
+  useEffect(() => {
+    const pathChanged = activePath !== prevActivePath.current || activeDomain !== prevActiveDomain.current;
+    if (pathChanged && (isAncestor || isActive) && !expanded) {
+      setExpanded(true);
+    }
+    prevActivePath.current = activePath;
+    prevActiveDomain.current = activeDomain;
+  }, [activePath, activeDomain, isAncestor, isActive, expanded]);
+
+  const fetchChildren = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/browse/node', { params: { domain, path } });
+      setChildren(res.data.children);
+      setFetched(true);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClick = (e) => {
+    e.stopPropagation();
+    if (isActive) {
+      if (hasChildren) setExpanded(!expanded);
+    } else {
+      onNavigate(path, domain);
+      if (!expanded && hasChildren) setExpanded(true);
+    }
+  };
+
+  return (
+    <div>
+      <div 
+        className={clsx(
+          "flex items-center gap-1.5 py-1.5 pr-2 rounded-lg text-sm transition-all cursor-pointer group",
+          isActive ? "bg-indigo-500/10 text-indigo-300" : "text-slate-400 hover:bg-white/[0.03] hover:text-slate-200"
+        )}
+        style={{ paddingLeft: `${level * 12 + 8}px` }}
+        onClick={handleClick}
+      >
+        <div 
+          className="w-5 h-5 flex items-center justify-center flex-shrink-0"
+          onClick={(e) => {
+             if (hasChildren) {
+                 e.stopPropagation();
+                 setExpanded(!expanded);
+             }
+          }}
+        >
+          {loading ? (
+            <div className="w-3 h-3 border-2 border-slate-500 border-t-transparent rounded-full animate-spin" />
+          ) : hasChildren ? (
+            <ChevronRight size={14} className={clsx("transition-transform text-slate-500 group-hover:text-slate-300", expanded && "rotate-90")} />
+          ) : null}
+        </div>
+        <FileText size={14} className={clsx("flex-shrink-0", isActive ? "text-indigo-400" : "text-slate-600 group-hover:text-slate-400")} />
+        <span className="truncate flex-1 text-[13px]">{name}</span>
+      </div>
+      
+      {expanded && children.length > 0 && (
+        <div className="">
+          {children.map(child => (
+            <TreeNode 
+              key={child.path}
+              domain={domain}
+              path={child.path}
+              name={child.name}
+              childrenCount={child.approx_children_count}
+              activeDomain={activeDomain}
+              activePath={activePath}
+              onNavigate={onNavigate}
+              level={level + 1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// 2. Sidebar Domain Node
+const DomainNode = ({ domain, rootCount, activeDomain, activePath, onNavigate }) => {
+  const [expanded, setExpanded] = useState(activeDomain === domain);
+  const [children, setChildren] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [fetched, setFetched] = useState(false);
+
+  const prevActiveDomain = useRef(activeDomain);
+  const prevActivePath = useRef(activePath);
+
+  // Before first fetch, trust server count; after fetch, trust actual children length.
+  const hasChildren = fetched ? children.length > 0 : (rootCount === undefined || rootCount > 0);
+
+  useEffect(() => {
+    if (expanded && !fetched && hasChildren) {
+      fetchChildren();
+    }
+  }, [expanded, fetched, hasChildren]);
+
+  useEffect(() => {
+    const changed = activeDomain !== prevActiveDomain.current || activePath !== prevActivePath.current;
+    if (changed && activeDomain === domain && !expanded) {
+      setExpanded(true);
+    }
+    prevActiveDomain.current = activeDomain;
+    prevActivePath.current = activePath;
+  }, [activeDomain, activePath, domain, expanded]);
+
+  const fetchChildren = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/browse/node', { params: { domain, path: '' } });
+      setChildren(res.data.children);
+      setFetched(true);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const isActive = activeDomain === domain && activePath === '';
+
+  const handleClick = (e) => {
+    e.stopPropagation();
+    if (isActive) {
+      if (hasChildren) setExpanded(!expanded);
+    } else {
+      onNavigate('', domain);
+      if (!expanded && hasChildren) setExpanded(true);
+    }
+  };
+
+  return (
+    <div className="mb-2">
+      <div 
+        className={clsx(
+          "flex items-center gap-1.5 px-2 py-2 rounded-lg text-sm transition-all cursor-pointer group",
+          isActive ? "bg-indigo-500/10 text-indigo-300 shadow-[0_0_10px_rgba(99,102,241,0.1)]" : "text-slate-400 hover:bg-white/[0.03] hover:text-slate-200"
+        )}
+        onClick={handleClick}
+      >
+        <div 
+          className="w-5 h-5 flex items-center justify-center flex-shrink-0"
+          onClick={(e) => {
+             if (hasChildren) {
+                 e.stopPropagation();
+                 setExpanded(!expanded);
+             }
+          }}
+        >
+          {loading ? (
+            <div className="w-3.5 h-3.5 border-2 border-slate-500 border-t-transparent rounded-full animate-spin" />
+          ) : hasChildren ? (
+            <ChevronRight size={16} className={clsx("transition-transform text-slate-500 group-hover:text-slate-300", expanded && "rotate-90")} />
+          ) : null}
+        </div>
+        <Database size={16} className={clsx("flex-shrink-0 ml-0.5", isActive ? "text-indigo-400" : "text-slate-500")} />
+        <span className="font-medium flex-1 truncate ml-1">
+          {domain.charAt(0).toUpperCase() + domain.slice(1)} Memory
+        </span>
+        {rootCount !== undefined && (
+          <span className="text-[10px] bg-slate-800/80 px-1.5 py-0.5 rounded text-slate-500">{rootCount}</span>
+        )}
+      </div>
+      
+      {expanded && children.length > 0 && (
+        <div className="mt-1">
+          {children.map(child => (
+            <TreeNode 
+              key={child.path}
+              domain={domain}
+              path={child.path}
+              name={child.name}
+              childrenCount={child.approx_children_count}
+              activeDomain={activeDomain}
+              activePath={activePath}
+              onNavigate={onNavigate}
+              level={1}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// 3. Breadcrumb
 const Breadcrumb = ({ items, onNavigate }) => (
   <div className="flex items-center gap-2 overflow-x-auto no-scrollbar mask-linear-fade">
     <button 
@@ -117,7 +309,7 @@ const NodeGridCard = ({ node, currentDomain, onClick }) => {
     {/* Header: Icon + Name + Importance */}
     <div className="flex items-center gap-3 mb-3 w-full">
       <div className="p-2 rounded-lg bg-slate-900 group-hover:bg-indigo-900/20 text-slate-500 group-hover:text-indigo-400 transition-colors flex-shrink-0">
-         {node.children_count > 0 ? <Folder size={18} /> : <FileText size={18} />}
+         {node.approx_children_count > 0 ? <Folder size={18} /> : <FileText size={18} />}
       </div>
       <div className="min-w-0 flex-1">
         <h3 className="text-sm font-semibold text-slate-300 group-hover:text-indigo-200 transition-colors break-words line-clamp-2">
@@ -275,21 +467,26 @@ export default function MemoryBrowser() {
           <p className="text-[10px] text-slate-600 pl-6 uppercase tracking-wider">Neural Explorer v2.0</p>
         </div>
         
-        <div className="p-3 flex-1 overflow-y-auto">
+        <div className="p-3 flex-1 overflow-y-auto custom-scrollbar">
              <div className="mb-4">
                  <h3 className="px-3 text-[10px] font-bold text-slate-600 uppercase tracking-widest mb-2">Domains</h3>
                  {domains.map(d => (
-                   <SidebarItem
+                   <DomainNode
                      key={d.domain}
-                     icon={Database}
-                     label={d.domain.charAt(0).toUpperCase() + d.domain.slice(1) + ' Memory'}
-                     active={domain === d.domain}
-                     count={d.root_count}
-                     onClick={() => navigateTo('', d.domain)}
+                     domain={d.domain}
+                     rootCount={d.root_count}
+                     activeDomain={domain}
+                     activePath={path}
+                     onNavigate={navigateTo}
                    />
                  ))}
                  {domains.length === 0 && (
-                   <SidebarItem icon={Database} label="Core Memory" active={true} onClick={() => navigateTo('', 'core')} />
+                   <DomainNode
+                     domain="core"
+                     activeDomain={domain}
+                     activePath={path}
+                     onNavigate={navigateTo}
+                   />
                  )}
              </div>
         </div>
@@ -342,8 +539,8 @@ export default function MemoryBrowser() {
             ) : (
                 <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     
-                    {/* Node Header & Content (If not root) */}
-                    {!isRoot && node && (
+                    {/* Node Header & Content */}
+                    {node && (!isRoot || !node.is_virtual || editing) && (
                         <div className="space-y-4">
                              {/* Header */}
                             <div className="flex items-start justify-between gap-4">

@@ -426,12 +426,26 @@ class SQLiteClient:
                 .order_by(Edge.priority.asc(), Edge.name)
             )
             result = await session.execute(stmt)
+            rows = result.all()
 
             prefix = f"{context_path}/" if context_path else None
 
+            child_uuids = {edge.child_uuid for edge, _ in rows}
+            approx_children_count_map: Dict[str, int] = {}
+            if child_uuids:
+                count_result = await session.execute(
+                    select(Edge.parent_uuid, func.count(Edge.id))
+                    .where(Edge.parent_uuid.in_(child_uuids))
+                    .group_by(Edge.parent_uuid)
+                )
+                approx_children_count_map = {
+                    parent_uuid: count
+                    for parent_uuid, count in count_result.all()
+                }
+
             children = []
             seen = set()
-            for edge, memory in result.all():
+            for edge, memory in rows:
                 if edge.child_uuid in seen:
                     continue
                 seen.add(edge.child_uuid)
@@ -445,6 +459,8 @@ class SQLiteClient:
                     all_paths, context_domain, prefix
                 )
 
+                approx_children_count = approx_children_count_map.get(edge.child_uuid, 0)
+
                 children.append(
                     {
                         "node_uuid": edge.child_uuid,
@@ -457,6 +473,7 @@ class SQLiteClient:
                         else memory.content,
                         "priority": edge.priority,
                         "disclosure": edge.disclosure,
+                        "approx_children_count": approx_children_count,
                     }
                 )
 
