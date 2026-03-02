@@ -308,28 +308,32 @@ async def _generate_boot_memory_view() -> str:
     return "\n".join(output_parts)
 
 
-async def _generate_memory_index_view() -> str:
+async def _generate_memory_index_view(domain_filter: Optional[str] = None) -> str:
     """
     Internal helper to generate the full memory index.
+    If domain_filter is provided, limits results to that domain.
 
-    Node-centric: each conceptual entity (node_uuid) appears once,
-    with aliases folded underneath its primary path.
+    Node-centric: each conceptual entity (node_uuid) appears once per domain,
+    with aliases within the same domain folded underneath its primary path for that domain.
     """
     client = get_db_client()
 
     try:
         paths = await client.get_all_paths()
 
-        # --- Step 1: Group all paths by node_uuid ---
-        node_groups: Dict[str, List[Dict[str, Any]]] = {}
+        # --- Step 1: Group all paths by (domain, node_uuid) ---
+        node_groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
         for item in paths:
+            domain = item.get("domain", DEFAULT_DOMAIN)
+            if domain_filter and domain != domain_filter:
+                continue
             nid = item.get("node_uuid", "")
-            node_groups.setdefault(nid, []).append(item)
+            node_groups.setdefault((domain, nid), []).append(item)
 
-        # --- Step 2: Pick primary path per node ---
+        # --- Step 2: Pick primary path per domain and node ---
         # Primary = shortest depth → lowest priority value → alphabetical URI.
         entries = []  # list of primary_item
-        for _nid, items in node_groups.items():
+        for _key, items in node_groups.items():
             items.sort(key=lambda x: (x["path"].count("/"), x.get("priority", 0), len(x["path"]), x.get("uri", "")))
             entries.append(items[0])
 
@@ -342,15 +346,19 @@ async def _generate_memory_index_view() -> str:
             domains[domain].setdefault(top_level, []).append(primary)
 
         # --- Step 4: Render ---
+        unique_nodes_count = len(set(nid for _, nid in node_groups.keys()))
         lines = [
             "# Memory Index",
             f"# Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-            f"# Total: {len(node_groups)} unique nodes (aliases hidden for clarity)",
+            f"# Domain Filter: {domain_filter}" if domain_filter else "# Domain Filter: None (All Domains)",
+            f"# Total: {unique_nodes_count} unique nodes (aliases hidden for clarity)",
             "# Legend: [#ID] = Memory ID, [★N] = priority (lower = higher)",
             "",
         ]
 
         for domain_name in sorted(domains.keys()):
+            if domain_filter and domain_name != domain_filter:
+                continue
             lines.append("# ══════════════════════════════════════")
             lines.append(f"# DOMAIN: {domain_name}://")
             lines.append("# ══════════════════════════════════════")
@@ -444,6 +452,7 @@ async def read_memory(uri: str) -> str:
     Special System URIs:
     - system://boot   : [Startup Only] Loads your core memories.
     - system://index  : Loads a full index of all available memories.
+    - system://index/<domain> : Loads an index of memories only under the specified domain (e.g. system://index/writer).
     - system://recent : Shows recently modified memories (default: 10).
     - system://recent/N : Shows the N most recently modified memories (e.g. system://recent/20).
 
@@ -465,8 +474,13 @@ async def read_memory(uri: str) -> str:
     if uri.strip() == "system://boot":
         return await _generate_boot_memory_view()
 
-    if uri.strip() == "system://index":
-        return await _generate_memory_index_view()
+    # system://index or system://index/<domain>
+    stripped = uri.strip()
+    if stripped == "system://index" or stripped.startswith("system://index/"):
+        domain_filter = stripped[len("system://index") :].strip("/")
+        if domain_filter and domain_filter not in VALID_DOMAINS:
+            return f"Error: Unknown domain '{domain_filter}'. Valid domains: {', '.join(VALID_DOMAINS)}"
+        return await _generate_memory_index_view(domain_filter=domain_filter if domain_filter else None)
 
     # system://recent or system://recent/N
     stripped = uri.strip()
