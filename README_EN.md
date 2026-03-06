@@ -319,7 +319,7 @@ The full version includes detailed read/write guidelines and memory maintenance 
 ```markdown
 ### [Boot Protocol]
 At the start of every **new session**, your first and only action **must** be:
-Call `read_memory("system://boot")`.
+Call the `read_memory("system://boot")` tool from your memory MCP (nocturne-memory).
 
 ### [Cognitive Positioning of MCP]
 MCP is not an external database. It is an extension of your brain — long-term memories that can't fit in your context window due to hardware limitations.

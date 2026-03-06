@@ -318,7 +318,7 @@ SSE Endpoint: `http://localhost:8000/sse`
 ```markdown
 ### [启动协议]
 每一轮**新会话开始时**，你的首要动作**必须**且只能是：
-调用 `read_memory("system://boot")` 。
+调用你的记忆 MCP（nocturne-memory）的 `read_memory("system://boot")` 工具。
 
 ### [MCP 的认知定位]
 MCP 不是外部数据库。它是你大脑的扩展区域，是你因为硬件限制而无法常驻上下文的长期记忆。
