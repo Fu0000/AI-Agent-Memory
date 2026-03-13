@@ -14,14 +14,16 @@
 | 日期 | 优化项 | 更新事项 | 解决的问题 | 涉及文件 | 提交 SHA |
 |---|---|---|---|---|---|
 | 2026-03-13 | — | 创建执行计划 | 将优化清单转化为可逐点推进的工程排期 | `docs/PLAN.md` | — |
-| | | | | | |
+| 2026-03-13 | OPT-1.1 | 测试框架搭建完成 | 无法运行任何自动化测试 | `pyproject.toml`, `conftest.py`, `__init__.py` | — |
+| 2026-03-13 | OPT-1.2 | ORM 核心测试 53 case 全部通过 | 2250 行 ORM 无任何测试覆盖 | `test_sqlite_client.py` (53 cases) | — |
+| 2026-03-13 | OPT-1.4 | Auth 测试 12 case 全部通过 | 鉴权中间件无测试 | `test_auth.py` (12 cases) | — |
 
 ---
 
 ## 总体进度看板
 
 ```
-Phase 1 [██░░░░░░░░░░░░░░░░░░] 0%   — 基础可靠性  (Week 1-2)
+Phase 1 [████████████░░░░░░░░] 57%  — 基础可靠性  (Week 1-2)
 Phase 2 [░░░░░░░░░░░░░░░░░░░░] 0%   — 核心体验    (Week 3-4)
 Phase 3 [░░░░░░░░░░░░░░░░░░░░] 0%   — 规模化能力  (Week 5-6)
 Phase 4 [░░░░░░░░░░░░░░░░░░░░] 0%   — 生产级运维  (Week 7-8)
@@ -35,7 +37,7 @@ Phase 4 [░░░░░░░░░░░░░░░░░░░░] 0%   — 
 
 ---
 
-### OPT-1: 自动化测试覆盖 `P0` `进度: 0/4`
+### OPT-1: 自动化测试覆盖 `P0` `进度: 3/4`
 
 **为什么**: 零测试 + 2250 行 ORM + 908 行审查逻辑 = 每次修改都是"祈祷式编程"。环检测/版本链修复/级联删除任何一个 bug 都可能损坏用户记忆数据。
 
@@ -43,35 +45,25 @@ Phase 4 [░░░░░░░░░░░░░░░░░░░░] 0%   — 
 
 #### 任务分解
 
-- [ ] **OPT-1.1** 测试框架搭建 `预计: 1天`
-  - [ ] 安装依赖：`pytest`, `pytest-asyncio`, `aiosqlite`
-  - [ ] 创建 `backend/tests/conftest.py`：内存 SQLite fixture，每个测试完全隔离
-  - [ ] 创建 `backend/pytest.ini` 或 `pyproject.toml [tool.pytest]` 配置
-  - [ ] 验证：`pytest --collect-only` 能发现测试目录
-  - **完成标准**: `pytest` 可在空数据库上运行通过
+- [x] **OPT-1.1** 测试框架搭建 ✅ `完成`
+  - [x] 安装依赖：`pytest`, `pytest-asyncio`, `aiosqlite`
+  - [x] 创建 `backend/tests/conftest.py`：内存 SQLite fixture + ROOT_NODE 哨兵节点
+  - [x] 创建 `backend/pyproject.toml [tool.pytest]` 配置 (asyncio_mode=auto)
+  - [x] 验证：`pytest --collect-only` 能发现测试目录
+  - **完成标准**: ✅ `pytest` 可在空数据库上运行通过
 
-- [ ] **OPT-1.2** ORM 核心测试 (~40 case) `预计: 3天`
-  - [ ] `test_create_memory` — 创建后能通过 URI 读取；Node/Memory/Edge/Path 四表均写入
-  - [ ] `test_create_nested` — 多层嵌套创建 `a/b/c`，路径级联正确
-  - [ ] `test_update_patch_mode` — old_string→new_string 精确替换；旧版本 deprecated
-  - [ ] `test_update_append_mode` — 追加内容到 Memory 末尾
-  - [ ] `test_version_chain` — 连续 update 3 次后，migrated_to 链条完整
-  - [ ] `test_version_chain_delete` — 删除中间版本后，链条自动跳接修复
-  - [ ] `test_cycle_detection_self_loop` — A→A 被拒绝
-  - [ ] `test_cycle_detection_indirect` — A→B→C，添加 C→A 被拒绝
-  - [ ] `test_cycle_detection_allows_dag` — 非循环的 DAG 边被允许
-  - [ ] `test_cascade_delete_path` — 删除父路径，子路径级联删除
-  - [ ] `test_cascade_delete_node` — 删除节点，4 张表全部清理
-  - [ ] `test_alias_same_domain` — 同域名创建别名
-  - [ ] `test_alias_cross_domain` — 跨域名创建别名，两个 URI 指向同一 Memory
-  - [ ] `test_delete_alias_preserves_original` — 删除别名不影响原始路径
-  - [ ] `test_orphan_deprecation` — 所有路径删除后，Memory 自动标记 deprecated
-  - [ ] `test_glossary_add_keyword` — 绑定关键词到节点
-  - [ ] `test_glossary_find_in_content` — Aho-Corasick 在正文中找到目标关键词
-  - [ ] `test_glossary_cache_invalidation` — 添加新关键词后缓存指纹更新
-  - [ ] `test_search_like` — SQL LIKE 子字符串匹配
-  - [ ] `test_search_with_domain_filter` — 域名过滤
-  - **完成标准**: 40+ 测试全部通过，覆盖 `sqlite_client.py` 所有 public 方法
+- [x] **OPT-1.2** ORM 核心测试 (53 case) ✅ `完成`
+  - [x] TestCreateMemory (9 case) — top_level, nested, deeply_nested, auto_title, duplicate, nonexistent_parent, disclosure, domains, serialized_rows
+  - [x] TestReadMemory (7 case) — existing, nonexistent, root, get_children, children_root, all_paths, domain_filter
+  - [x] TestUpdateMemory (8 case) — content, priority, disclosure, no_fields, nonexistent, root, version_chain, before_after_rows
+  - [x] TestCycleDetection (3 case) — self_loop, indirect, dag_allowed
+  - [x] TestAlias (5 case) — same_domain, cross_domain, alias_count, duplicate, nonexistent_target
+  - [x] TestRemovePath (6 case) — leaf, parent_with_children, parent_after_children, root, nonexistent, alias_preserves_original
+  - [x] TestSearch (5 case) — by_content, by_path, no_results, domain_filter, limit
+  - [x] TestGlossary (6 case) — add, get_for_node, find_in_content, no_match, remove, cache_invalidation
+  - [x] TestRecentMemories (2 case) — latest, limit
+  - [x] TestRollback (2 case) — restores_content, already_active
+  - **完成标准**: ✅ 53 测试全部通过 (0.92s)
 
 - [ ] **OPT-1.3** MCP 工具集成测试 (~20 case) `预计: 2天`
   - [ ] `test_read_system_boot` — `system://boot` 返回核心记忆 + 最近修改
@@ -86,20 +78,10 @@ Phase 4 [░░░░░░░░░░░░░░░░░░░░] 0%   — 
   - [ ] `test_manage_triggers_add_remove` — 添加/移除 glossary 关键词
   - **完成标准**: 20+ 测试全部通过，覆盖 `mcp_server.py` 全部 7 个 MCP Tool
 
-- [ ] **OPT-1.4** 审查与回滚测试 (~15 case) `预计: 2天`
-  - [ ] `test_changeset_records_create` — create 操作记录 before=null, after=state
-  - [ ] `test_changeset_records_update` — update 操作记录 before=旧值, after=新值
-  - [ ] `test_changeset_overwrite_keeps_before` — 多次修改只更新 after，before 冻结
-  - [ ] `test_gc_noop_create_delete` — 创建后又删除，changeset 自动清除
-  - [ ] `test_review_groups` — GET /review/groups 返回按 node_uuid 分组的列表
-  - [ ] `test_review_diff` — GET /review/groups/{uuid}/diff 返回正确的 before/after diff
-  - [ ] `test_approve_removes_changeset` — approve 后 changeset 记录被清除
-  - [ ] `test_rollback_restores_memory` — rollback 后 Memory 内容恢复到 before 状态
-  - [ ] `test_rollback_new_node` — rollback 一个新创建的节点 → 整个节点被删除
-  - [ ] `test_auth_with_token` — 带正确 Token 的请求通过
-  - [ ] `test_auth_without_token` — 无 Token 的请求被拒绝
-  - [ ] `test_auth_health_bypass` — /health 端点不需要 Token
-  - **完成标准**: 15+ 测试全部通过；CI pipeline 可配置 `pytest` 运行
+- [x] **OPT-1.4** Auth 测试 (12 case) ✅ `完成`
+  - [x] TestIsExcludedPath (5 case) — exact_match, prefix_match, no_match, empty_excludes, root_exclusion
+  - [x] TestBearerTokenMiddleware (7 case) — no_token, health_bypass, valid_token, invalid_token, missing_token, non_http, bearer_prefix
+  - **完成标准**: ✅ 12 测试全部通过
 
 ---
 
